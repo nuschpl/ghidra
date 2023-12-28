@@ -23,6 +23,8 @@ import ghidra.program.model.address.Address;
 import ghidra.program.model.listing.Program;
 import ghidra.program.model.mem.Memory;
 import ghidra.program.model.mem.MemoryAccessException;
+import ghidra.program.model.reloc.RelocationResult;
+import ghidra.program.model.reloc.Relocation.Status;
 import ghidra.util.exception.NotFoundException;
 
 public class TRICOREElfRelocationHandler extends ElfRelocationHandler {
@@ -33,12 +35,12 @@ public class TRICOREElfRelocationHandler extends ElfRelocationHandler {
 	}
 
 	@Override
-	public void relocate(ElfRelocationContext elfRelocationContext, ElfRelocation relocation, Address relocationAddress)
+	public RelocationResult relocate(ElfRelocationContext elfRelocationContext, ElfRelocation relocation, Address relocationAddress)
 			throws MemoryAccessException, NotFoundException {
 
 		ElfHeader elf = elfRelocationContext.getElfHeader();
 		if (!canRelocate(elf)) {
-			return;
+			return RelocationResult.FAILURE;
 		}
 
 		Program program = elfRelocationContext.getProgram();
@@ -47,7 +49,7 @@ public class TRICOREElfRelocationHandler extends ElfRelocationHandler {
 		int type = relocation.getType();
 
 		if (TRICOREElfRelocationConstants.R_TRICORE_NONE == type) {
-			return;
+			return RelocationResult.SKIPPED;
 		}
 
 		long addend = relocation.hasAddend() ? relocation.getAddend() : memory.getInt(relocationAddress);
@@ -73,103 +75,89 @@ public class TRICOREElfRelocationHandler extends ElfRelocationHandler {
 		switch (type) {
 		case TRICOREElfRelocationConstants.R_TRICORE_32REL:   //word32 S + A - P
 			rv = (int)(symbolValue + addend - offset);
-			relocate_word32(memory, relocationAddress, rv);
-			break;
+			return new RelocationResult(Status.APPLIED, relocate_word32(memory, relocationAddress, rv));
 		case TRICOREElfRelocationConstants.R_TRICORE_32ABS:   //word32 S + A
 			rv = (int)(symbolValue + addend);
-			relocate_word32(memory, relocationAddress, rv);
-			break;
+			return new RelocationResult(Status.APPLIED, relocate_word32(memory, relocationAddress, rv));
 		case TRICOREElfRelocationConstants.R_TRICORE_24REL:   //relB S + A - P
 			rv = (int)(symbolValue + addend - offset);
-			relocate_relB(memory, relocationAddress, rv);
-			break;
+			return new RelocationResult(Status.APPLIED, relocate_relB(memory, relocationAddress, rv));
 		case TRICOREElfRelocationConstants.R_TRICORE_24ABS:   //absB S + A
 			rv = (int)(symbolValue + addend);
-			relocate_absB(memory, relocationAddress, rv);
-			break;
+			return new RelocationResult(Status.APPLIED, relocate_absB(memory, relocationAddress, rv));
 		case TRICOREElfRelocationConstants.R_TRICORE_16SM:    //BOL S + A - A[0]
 			markAsWarning(program, relocationAddress, "R_TRICORE_16SM", symbolName, symbolIndex,
 					"TODO, needs support ", elfRelocationContext.getLog()); 
 			//relocate_BOL(memory, relocationAddress, rv);
-			break;
+			return RelocationResult.UNSUPPORTED;
 		case TRICOREElfRelocationConstants.R_TRICORE_HI:      //RLC S + A + 8000H >> 16
 			rv = ((int)(symbolValue + addend) + 0x8000) >> 16;
-			relocate_RLC(memory, relocationAddress, rv);
-			break;
+			return new RelocationResult(Status.APPLIED, relocate_RLC(memory, relocationAddress, rv));
 		case TRICOREElfRelocationConstants.R_TRICORE_LO:      //RLC S + A & FFFFH
 			rv = (int)(symbolValue + addend) & 0xffff;
-			relocate_RLC(memory, relocationAddress, rv);
-			break;
+			return new RelocationResult(Status.APPLIED, relocate_RLC(memory, relocationAddress, rv));
 		case TRICOREElfRelocationConstants.R_TRICORE_LO2:     //BOL S + A & FFFFH
 			rv = (int)(symbolValue + addend) & 0xffff;
-			relocate_BOL(memory, relocationAddress, rv);
-			break;
+			return new RelocationResult(Status.APPLIED, relocate_BOL(memory, relocationAddress, rv));
 		case TRICOREElfRelocationConstants.R_TRICORE_18ABS:   //ABS S + A
 			rv = (int)(symbolValue + addend);
-			relocate_ABS(memory, relocationAddress, rv);
-			break;
+			return new RelocationResult(Status.APPLIED, relocate_ABS(memory, relocationAddress, rv));
 		case TRICOREElfRelocationConstants.R_TRICORE_10SM:    //BO S + A - A[0]
 			markAsWarning(program, relocationAddress, "R_TRICORE_10SM", symbolName, symbolIndex,
 					"TODO, needs support ", elfRelocationContext.getLog()); 
 			//relocate_BO(memory, relocationAddress, rv);
-			break;
+			return RelocationResult.UNSUPPORTED;
 		case TRICOREElfRelocationConstants.R_TRICORE_15REL:   //BR S + A - P
 			rv = (int)(symbolValue + addend - offset);
-			relocate_BR(memory, relocationAddress, rv);
-			break;
+			return new RelocationResult(Status.APPLIED, relocate_BR(memory, relocationAddress, rv));
 		case TRICOREElfRelocationConstants.R_TRICORE_10LI:    //BO S + A - A[1]
 			markAsWarning(program, relocationAddress, "R_TRICORE_10LI", symbolName, symbolIndex,
 					"TODO, needs support ", elfRelocationContext.getLog()); 
+			return RelocationResult.UNSUPPORTED;
 			//relocate_BO(memory, relocationAddress, rv);
-			break;
 		case TRICOREElfRelocationConstants.R_TRICORE_16LI:    //BOL S + A - A[1]
 			markAsWarning(program, relocationAddress, "R_TRICORE_16LI", symbolName, symbolIndex,
 					"TODO, needs support ", elfRelocationContext.getLog()); 
+			return RelocationResult.UNSUPPORTED;
 			//relocate_BOL(memory, relocationAddress, rv);
-			break;
 		case TRICOREElfRelocationConstants.R_TRICORE_10A8:    //BO S + A - A[8]
 			markAsWarning(program, relocationAddress, "R_TRICORE_10A8", symbolName, symbolIndex,
 					"TODO, needs support ", elfRelocationContext.getLog()); 
+			return RelocationResult.UNSUPPORTED;
 			//relocate_BO(memory, relocationAddress, rv);
-			break;
 		case TRICOREElfRelocationConstants.R_TRICORE_16A8:    //BOL S + A - A[8]
 			markAsWarning(program, relocationAddress, "R_TRICORE_16A8", symbolName, symbolIndex,
 					"TODO, needs support ", elfRelocationContext.getLog()); 
+			return RelocationResult.UNSUPPORTED;
 			//relocate_BOL(memory, relocationAddress, rv);
-			break;
 		case TRICOREElfRelocationConstants.R_TRICORE_10A9:    //BO S + A - A[9]
 			markAsWarning(program, relocationAddress, "R_TRICORE_16A9", symbolName, symbolIndex,
-					"TODO, needs support ", elfRelocationContext.getLog()); 
+					"TODO, needs support ", elfRelocationContext.getLog());
+			return RelocationResult.UNSUPPORTED;
 			//relocate_BO(memory, relocationAddress, rv);
-			break;
 		case TRICOREElfRelocationConstants.R_TRICORE_16A9:    //BOL S + A - A[9]
 			markAsWarning(program, relocationAddress, "R_TRICORE_16A9", symbolName, symbolIndex,
 					"TODO, needs support ", elfRelocationContext.getLog()); 
+			return RelocationResult.UNSUPPORTED;
 			//relocate_BOL(memory, relocationAddress, rv);
-			break;
 		case TRICOREElfRelocationConstants.R_TRICORE_PCPHI:   //word16 S + A >> 16
 			rv = (int)(symbolValue + addend) >> 16;
-			relocate_word16(memory, relocationAddress, rv);
-			break;
+			return new RelocationResult(Status.APPLIED, relocate_word16(memory, relocationAddress, rv));
 		case TRICOREElfRelocationConstants.R_TRICORE_PCPLO:   //word16 S + A & FFFFH
 			rv = (int)(symbolValue + addend) & 0xffff;
-			relocate_word16(memory, relocationAddress, rv);
-			break;
+			return new RelocationResult(Status.APPLIED, relocate_word16(memory, relocationAddress, rv));
 		case TRICOREElfRelocationConstants.R_TRICORE_PCPPAGE: //pcpPage S + A & FF00H
 			rv = (int)(symbolValue + addend) & 0xff00;
-			relocate_pcpPage(memory, relocationAddress, rv);
-			break;
+			return new RelocationResult(Status.APPLIED, relocate_pcpPage(memory, relocationAddress, rv));
 		case TRICOREElfRelocationConstants.R_TRICORE_PCPOFF:  //PI (S + A >> 2) & 3FH
 			rv = ((int)(symbolValue + addend) >> 2) & 0x3f;
-			relocate_PI(memory, relocationAddress, rv);
-			break;
+			return new RelocationResult(Status.APPLIED, relocate_PI(memory, relocationAddress, rv));
 		case TRICOREElfRelocationConstants.R_TRICORE_PCPTEXT: //word16 (S + A >> 1) & FFFFH
 			rv = ((int)(symbolValue + addend) >> 1) & 0xffff;
-			relocate_word16(memory, relocationAddress, rv);
-			break;
+			return new RelocationResult(Status.APPLIED, relocate_word16(memory, relocationAddress, rv));
 		default:
 			markAsUnhandled(program, relocationAddress, type, symbolIndex, symbolName, elfRelocationContext.getLog());
-			break;
+			return RelocationResult.UNSUPPORTED;
 		}
 	}
 
@@ -182,15 +170,17 @@ public class TRICOREElfRelocationHandler extends ElfRelocationHandler {
 	/**
 	 * A 32-bit field occupying four bytes. This address is NOT required to be 4-byte aligned.
 	 */
-	private void relocate_word32(Memory memory, Address relocationAddress, int rv) throws MemoryAccessException {
+	private int relocate_word32(Memory memory, Address relocationAddress, int rv) throws MemoryAccessException {
 		memory.setInt(relocationAddress, rv);
+		return 4; //size
 	}
 
 	/**
 	 * A 16-bit field occupying two bytes.
 	 */
-	private void relocate_word16(Memory memory, Address relocationAddress, int rv) throws MemoryAccessException {
+	private int  relocate_word16(Memory memory, Address relocationAddress, int rv) throws MemoryAccessException {
 		memory.setShort(relocationAddress, (short)rv);
+		return 2;
 	}
 
 	/**
@@ -200,7 +190,7 @@ public class TRICOREElfRelocationHandler extends ElfRelocationHandler {
 	 * - the RV must be in the range [-16777216,16777214].
 	 *   bit 0 of the RV must be zero.
 	 */
-	private void relocate_relB(Memory memory, Address relocationAddress, int rv) throws MemoryAccessException {
+	private int relocate_relB(Memory memory, Address relocationAddress, int rv) throws MemoryAccessException {
 		if (rv < -16777216 || rv > 16777214 || (rv & 1) != 0) {
 			throw new MemoryAccessException();
 		}
@@ -209,6 +199,7 @@ public class TRICOREElfRelocationHandler extends ElfRelocationHandler {
 		iw |= ((rv & 0x1fffe) << 15);
 		iw |= ((rv & 0x1fe0000) >> 9);
 		memory.setInt(relocationAddress, iw);
+		return 4;
 	}
 
 	/**
@@ -218,7 +209,7 @@ public class TRICOREElfRelocationHandler extends ElfRelocationHandler {
 	 * - bits 0 and 21 to 27 of the RV must be zero.
 	 * - bits 28-31 of the RV go into bits 12-15 of the IW.
 	 */
-	private void relocate_absB(Memory memory, Address relocationAddress, int rv) throws MemoryAccessException {
+	private int relocate_absB(Memory memory, Address relocationAddress, int rv) throws MemoryAccessException {
 		if ((0xfe00001 & rv) != 0) {
 			throw new MemoryAccessException();
 		}
@@ -227,6 +218,7 @@ public class TRICOREElfRelocationHandler extends ElfRelocationHandler {
 		iw |= ((rv & 0x1e0000) >> 9);
 		iw |= ((rv & 0xf0000000) >> 16);
 		memory.setInt(relocationAddress, iw);
+		return 4;
 	}
 
 	/**
@@ -235,7 +227,7 @@ public class TRICOREElfRelocationHandler extends ElfRelocationHandler {
 	 * - bits 6-9 of the RV go into bits 28-31 of the IW.
 	 * - bits 10-31 of the RV must be zero.
 	 */
-	private void relocate_BO(Memory memory, Address relocationAddress, int rv) throws MemoryAccessException {
+	private int relocate_BO(Memory memory, Address relocationAddress, int rv) throws MemoryAccessException {
 		if ((0xfffffc00 & rv) != 0) {
 			throw new MemoryAccessException();
 		}
@@ -243,6 +235,7 @@ public class TRICOREElfRelocationHandler extends ElfRelocationHandler {
 		iw |= ((rv & 0x3f) << 16);
 		iw |= ((rv & 0x3c0) << 22);
 		memory.setInt(relocationAddress, iw);
+		return 4;
 	}
 
 	/**
@@ -252,7 +245,7 @@ public class TRICOREElfRelocationHandler extends ElfRelocationHandler {
 	 * - bits 10-15 of the RV go into bits 22-27 of the IW.
 	 * - bits 16-31 of the RV must be zero.
 	 */
-	private void relocate_BOL(Memory memory, Address relocationAddress, int rv) throws MemoryAccessException {
+	private int relocate_BOL(Memory memory, Address relocationAddress, int rv) throws MemoryAccessException {
 		if ((0xffff0000 & rv) != 0) {
 			throw new MemoryAccessException();
 		}
@@ -261,6 +254,7 @@ public class TRICOREElfRelocationHandler extends ElfRelocationHandler {
 		iw |= ((rv & 0x3c0) << 22);
 		iw |= ((rv & 0xfc00) << 12);
 		memory.setInt(relocationAddress, iw);
+		return 4;
 	}
 
 	/**
@@ -268,13 +262,14 @@ public class TRICOREElfRelocationHandler extends ElfRelocationHandler {
 	 * - bits 1-15 of the RV go into bits 16-30 of the IW.
 	 * - bits 16-31 of the RV must be zero.
 	 */
-	private void relocate_BR(Memory memory, Address relocationAddress, int rv) throws MemoryAccessException {
+	private int relocate_BR(Memory memory, Address relocationAddress, int rv) throws MemoryAccessException {
 		if ((0xffff0000 & rv) != 0) {
 			throw new MemoryAccessException();
 		}
 		int iw = memory.getInt(relocationAddress) & 0x8000ffff;
 		iw |= ((rv & 0xfffe) << 15);
 		memory.setInt(relocationAddress, iw);
+		return 4;
 	}
 
 	/**
@@ -282,13 +277,14 @@ public class TRICOREElfRelocationHandler extends ElfRelocationHandler {
 	 * - bits 0-15 of the RV go into bits 12-27 of the IW.
 	 * - bits 16-31 of the RV must be zero.
 	 */
-	private void relocate_RLC(Memory memory, Address relocationAddress, int rv) throws MemoryAccessException {
+	private int relocate_RLC(Memory memory, Address relocationAddress, int rv) throws MemoryAccessException {
 		if ((0xffff0000 & rv) != 0) {
 			throw new MemoryAccessException();
 		}
 		int iw = memory.getInt(relocationAddress) & 0xf0000fff;
 		iw |= ((rv & 0xffff) << 12);
 		memory.setInt(relocationAddress, iw);
+		return 4;
 	}
 
 	/**
@@ -299,7 +295,7 @@ public class TRICOREElfRelocationHandler extends ElfRelocationHandler {
 	 * - bits 14-27 of the RV must be zero.
 	 * - bits 28-31 of the RV go into bits 12-15 of the IW.
 	 */
-	private void relocate_ABS(Memory memory, Address relocationAddress, int rv) throws MemoryAccessException {
+	private int relocate_ABS(Memory memory, Address relocationAddress, int rv) throws MemoryAccessException {
 		if ((0xfffc000 & rv) != 0) {
 			throw new MemoryAccessException();
 		}
@@ -309,6 +305,7 @@ public class TRICOREElfRelocationHandler extends ElfRelocationHandler {
 		iw |= ((rv & 0x3c00) << 12);
 		iw |= ((rv & 0xf0000000) >> 16);
 		memory.setInt(relocationAddress, iw);
+		return 4;
 	}
 
 	/**
@@ -327,13 +324,14 @@ public class TRICOREElfRelocationHandler extends ElfRelocationHandler {
 	 * - bits 8-15 of the RV go into bits 8-15 of the IW.
 	 * - bits 0-7 and 16-31 of the RV must be zero.
 	 */
-	private void relocate_pcpPage(Memory memory, Address relocationAddress, int rv) throws MemoryAccessException {
+	private int relocate_pcpPage(Memory memory, Address relocationAddress, int rv) throws MemoryAccessException {
 		if ((0xffff00ff & rv) != 0) {
 			throw new MemoryAccessException();
 		}
 		int iw = memory.getShort(relocationAddress) & 0xff;
 		iw |= (rv & 0xff00);
 		memory.setShort(relocationAddress, (short)iw);
+		return 2;
 	}
 
 	/**
@@ -341,12 +339,13 @@ public class TRICOREElfRelocationHandler extends ElfRelocationHandler {
 	 * - bits 0-5 of the RV go into bits 0-5 of the IW.
 	 * - bits 6-15 of the RV must be zero.
 	 */
-	private void relocate_PI(Memory memory, Address relocationAddress, int rv) throws MemoryAccessException {
+	private int relocate_PI(Memory memory, Address relocationAddress, int rv) throws MemoryAccessException {
 		if ((0xffffffc0 & rv) != 0) {
 			throw new MemoryAccessException();
 		}
 		int iw = memory.getShort(relocationAddress) & 0xffc0;
 		iw |= (rv & 0x3f);
 		memory.setShort(relocationAddress, (short)iw);
+		return 2;
 	}
  }
